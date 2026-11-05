@@ -130,6 +130,47 @@ describe('runActor', () => {
   });
 });
 
+describe('token failover chain (any number of tokens)', () => {
+  it('walks past every kind of used-up account to the first working one, and keeps using it', async () => {
+    // 1: skipped by the pre-check (no credit left); 2..41: out of credit mid-scrape (402);
+    // 42: usage limit (403); 43: run aborted by Apify for the hard limit; 44: works; 45: never needed.
+    const many = Array.from({ length: 40 }, (_, i) => `broke${i}`);
+    const pool = new TokenPool(['empty', ...many, 'limited', 'aborted', 'good', 'spare'].join(','));
+    assert.equal(pool.tokens.length, 45);
+    const m = mockFetch((url, init) => {
+      const t = String((init?.headers as any).Authorization).slice(7);
+      if (url.endsWith('/users/me')) return { body: { data: { username: t, plan: { id: 'FREE' } } } };
+      if (url.endsWith('/users/me/limits')) return { body: { data: { current: { monthlyUsageUsd: t === 'empty' ? 5 : 1 }, limits: { maxMonthlyUsageUsd: 5 } } } };
+      if (url.includes('/acts/')) {
+        if (t.startsWith('broke')) return { status: 402, body: err('not-enough-usage-to-run-paid-actor', 'You have exceeded your monthly usage limit') };
+        if (t === 'limited') return { status: 403, body: err('platform-feature-disabled', 'Monthly usage hard limit exceeded') };
+        if (t === 'aborted') return { body: { data: { id: 'ra', status: 'ABORTED', statusMessage: 'Run aborted: insufficient credit', defaultDatasetId: 'x' } } };
+        return { body: { data: { id: `r-${t}`, status: 'SUCCEEDED', defaultDatasetId: `d-${t}` } } };
+      }
+      if (url.includes('/datasets/d-good/items')) return { body: [{ id: 1 }, { id: 2 }] };
+      throw new Error(`unexpected ${t} ${url}`);
+    });
+    restore = m.restore;
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      await precheckTokens(pool, 0.05);
+      assert.equal(pool.tokens[0].dead, true, 'pre-check skips the empty account');
+      const first = await runActor(task, pool, { retryDelayMs: 1 });
+      assert.equal(first.tokenLabel, '#44 (…good)');
+      assert.equal(first.items.length, 2);
+      assert.deepEqual(pool.tokens.map((t) => t.dead), [...Array(43).fill(true), false, false]);
+      const before = m.calls.length;
+      const second = await runActor(task, pool, { retryDelayMs: 1 });
+      assert.equal(second.tokenLabel, '#44 (…good)', 'later searches go straight to the working token');
+      assert.ok(m.calls.slice(before).every((c) => (c.init?.headers as any).Authorization === 'Bearer good'));
+      assert.equal(pool.tokens[44].dead, false, 'the spare is untouched until needed');
+    } finally {
+      console.warn = warn;
+    }
+  });
+});
+
 describe('precheckTokens', () => {
   it('skips invalid tokens and tokens with almost no credit left', async () => {
     const m = mockFetch((url, init) => {

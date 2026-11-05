@@ -6,7 +6,7 @@ import { parseArgs } from 'node:util';
 import config from '../config.ts';
 import { TokenPool, inspectTokens } from './apify.ts';
 import { GoogleAuthError, GoogleClient, type RunSheet } from './google.ts';
-import { COMMANDS, type CommandDef, History, type HistoryEntry, LOG_LINES, type RunInfo, listRuns, localDay, readRun, runIdTime, sheetTitle, windowLabel } from './runs.ts';
+import { COMMANDS, type CommandDef, History, type HistoryEntry, LOG_LINES, type RunInfo, listRuns, localDay, readRun, runIdTime, scrapeProgress, sheetTitle, windowLabel } from './runs.ts';
 import { parseCsv } from './store.ts';
 
 /**
@@ -158,7 +158,7 @@ function state() {
     return {
       ...rest,
       hasLog: e.log.length > 0,
-      run: run && { runId: run.runId, window: run.window, sources: run.sources, durationSec: run.durationSec, totals: run.totals, costUsd: run.costUsd, errors: run.errors, sheetTitle: sheetTitle(run) },
+      run: run && { runId: run.runId, window: run.window, sources: run.sources, durationSec: run.durationSec, totals: run.totals, costUsd: run.costUsd, errors: run.errors, perSource: run.perSource, dropped: run.dropped, sheetTitle: sheetTitle(run) },
       uploading: Boolean(run && syncing.has(run.runId)),
       files,
     };
@@ -167,7 +167,7 @@ function state() {
     today,
     apify,
     google: { configured: google.configured, connected: google.connected, email: google.state.email ?? null, trackerUrl: google.trackerUrl, folderName: config.sheets.folderName },
-    running: running && { id: running.entry.id, command: running.cmd.id, label: running.cmd.label, startedAt: running.entry.startedAt, log: running.log.slice(-200) },
+    running: running && { id: running.entry.id, command: running.cmd.id, label: running.cmd.label, startedAt: running.entry.startedAt, kind: running.cmd.kind, progress: running.cmd.kind === "scrape" ? scrapeProgress(running.log) : null, log: running.log.slice(-200) },
     commands: COMMANDS.map((c) => {
       const used = history.usedToday(c.id, today);
       return { id: c.id, label: c.label, description: c.description, cost: c.cost, kind: c.kind, usedToday: Boolean(used), usedAt: used?.startedAt ?? null };

@@ -85,6 +85,42 @@ export interface RunInfo {
   costUsd: number | null;
   errors: number;
   files: RunFile[];
+  /** Per source: searches ok/failed, jobs found, jobs kept after filters. */
+  perSource: Record<string, { ok: number; failed: number; found: number; kept: number }>;
+  /** Why jobs were dropped (counts). */
+  dropped: Record<string, number>;
+}
+
+export interface Progress {
+  phase: 'starting' | 'searching' | 'processing' | 'saved';
+  /** Paid searches finished / planned. */
+  done: number;
+  total: number;
+  /** Free boards finished / planned. */
+  freeDone: number;
+  freeTotal: number;
+}
+
+/** Reads a scrape's progress from its output lines ("(12/73) [linkedin] ...", "[remoteok] 317 jobs", "Summary"). */
+export function scrapeProgress(log: string[]): Progress {
+  let done = 0;
+  let total = 0;
+  let freeDone = 0;
+  let freeTotal = 0;
+  let saved = false;
+  for (const line of log) {
+    const m = /^\s*\((\d+)\/(\d+)\)/.exec(line);
+    const src = /Sources: ([\w, ]+?)(\s{2,}|$)/.exec(line);
+    const planned = /^\s+[a-z]+\s+(\d+) runs\s/.exec(line);
+    if (m) (done = Math.max(done, Number(m[1]))), (total = Number(m[2]));
+    else if (planned && !done) total += Number(planned[1]);
+    else if (src) freeTotal = src[1].split(', ').filter((s) => FREE_SOURCE_NAMES.includes(s)).length;
+    else if (/^\s*\[\w+\] (\d+ jobs|FAILED)/.test(line)) freeDone++;
+    else if (/^Summary\b/.test(line.trim())) saved = true;
+  }
+  const searched = done >= total && freeDone >= freeTotal && (done > 0 || freeDone > 0);
+  const phase = saved ? 'saved' : searched ? 'processing' : done || freeDone ? 'searching' : 'starting';
+  return { phase, done, total, freeDone, freeTotal };
 }
 
 /** Reads one output/<runId>/run.json. Handles both the current and the pre-2026-11-06 file names. */
@@ -115,6 +151,8 @@ export function readRun(outputDir: string, runId: string): RunInfo | null {
     costUsd: run.cost?.apifyActualUsd ?? run.cost?.apifyEstimateUsd ?? null,
     errors: Array.isArray(run.errors) ? run.errors.length : 0,
     files,
+    perSource: run.perSource ?? {},
+    dropped: run.dropped ?? {},
   };
 }
 

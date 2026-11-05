@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, it } from 'node:test';
-import { COMMANDS, History, type HistoryEntry, listRuns, localDay, runIdTime, sheetTitle, sourcesLabel, sourcesTag } from '../src/runs.ts';
+import { COMMANDS, History, type HistoryEntry, listRuns, localDay, runIdTime, scrapeProgress, sheetTitle, sourcesLabel, sourcesTag } from '../src/runs.ts';
 import { runFiles } from '../src/store.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'job-scraper-runs-'));
@@ -32,6 +32,30 @@ describe('naming', () => {
   it('every button maps to a real CLI command', () => {
     for (const c of COMMANDS) assert.ok(['scrape', 'tokens', 'rescore'].includes(c.args[0]), c.id);
     assert.equal(new Set(COMMANDS.map((c) => c.id)).size, COMMANDS.length);
+  });
+});
+
+describe('scrapeProgress', () => {
+  const plan = [
+    'Window: last 24h   Sources: linkedin, indeed, remoteok, jobicy   History: 303 jobs',
+    '  linkedin       24 runs   up to 600   jobs   worst case $0.240   (300 known IDs skipped)',
+    '  indeed         28 runs   up to 700   jobs   worst case $0.070',
+    '  remoteok       free: 8 tag feeds (latest ~100 jobs each)',
+  ];
+  it('goes starting -> searching -> processing -> saved', () => {
+    assert.deepEqual(scrapeProgress(plan), { phase: 'starting', done: 0, total: 52, freeDone: 0, freeTotal: 2 });
+    const free = [...plan, '  [jobicy] 241 jobs', '  [remoteok] 317 jobs'];
+    assert.equal(scrapeProgress(free).phase, 'searching', 'free boards done first, paid searches still to come');
+    const some = [...free, '  (2/52)    [linkedin] ("Full Stack" ... @ United States -> 25 jobs', '  (1/52)    [indeed] x -> FAILED: boom'];
+    assert.deepEqual(scrapeProgress(some), { phase: 'searching', done: 2, total: 52, freeDone: 2, freeTotal: 2 });
+    const all = [...some, '  (52/52)   [indeed] y -> 3 jobs'];
+    assert.equal(scrapeProgress(all).phase, 'processing');
+    assert.equal(scrapeProgress([...all, '', 'Summary', '  linkedin  10 found']).phase, 'saved');
+  });
+  it('free-only run', () => {
+    const p = ['Window: last 7d   Sources: remoteok, jobicy, wwr, workingnomads, arbeitnow   History: off', '  [wwr] 119 jobs'];
+    assert.deepEqual(scrapeProgress(p), { phase: 'searching', done: 0, total: 0, freeDone: 1, freeTotal: 5 });
+    assert.equal(scrapeProgress([...p, '  [a] 1 jobs', '  [b] 1 jobs', '  [c] FAILED: x', '  [d] 2 jobs']).phase, 'processing');
   });
 });
 
