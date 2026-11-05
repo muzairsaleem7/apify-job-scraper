@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Job Scraper</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%231f6feb'/><text x='8' y='12' font-size='10' text-anchor='middle' fill='white' font-family='sans-serif'>J</text></svg>">
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1f2328; --muted:#656d76; --line:#d8dee4; --accent:#1f6feb; --ok:#1a7f37; --bad:#cf222e; --warn:#9a6700; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0d1117; --card:#161b22; --text:#e6edf3; --muted:#8d96a0; --line:#30363d; --accent:#4493f8; --ok:#3fb950; --bad:#f85149; --warn:#d29922; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width:1040px; margin:0 auto; padding:24px 20px 60px; }
+  header { display:flex; flex-wrap:wrap; align-items:center; gap:10px 16px; margin-bottom:20px; }
+  h1 { font-size:20px; margin:0 auto 0 0; }
+  h2 { font-size:15px; margin:28px 0 10px; }
+  .chip { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border:1px solid var(--line); border-radius:999px; background:var(--card); font-size:13px; }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); }
+  .dot.ok { background:var(--ok); } .dot.bad { background:var(--bad); }
+  a { color:var(--accent); text-decoration:none; } a:hover { text-decoration:underline; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:12px; }
+  button.cmd { text-align:left; padding:14px 16px; border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--text); cursor:pointer; font:inherit; display:flex; flex-direction:column; gap:4px; }
+  button.cmd:hover:not(:disabled) { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+  button.cmd:disabled { cursor:not-allowed; opacity:.55; }
+  button.cmd b { font-size:15px; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .muted { color:var(--muted); font-size:12.5px; }
+  .tag { font-size:11.5px; padding:1px 7px; border-radius:999px; border:1px solid var(--line); }
+  .tag.paid { color:var(--warn); border-color:var(--warn); } .tag.free { color:var(--ok); border-color:var(--ok); }
+  .small { font:inherit; font-size:12.5px; padding:3px 9px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--text); cursor:pointer; }
+  .small:hover { border-color:var(--accent); }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+  pre.log { background:#0d1117; color:#c9d1d9; padding:12px; border-radius:8px; max-height:340px; overflow:auto; font:12px/1.4 ui-monospace,Consolas,monospace; white-space:pre-wrap; margin:10px 0 0; }
+  .entry { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 16px; margin-bottom:10px; }
+  .entry.latest { border-color:var(--accent); }
+  .status { font-size:12px; font-weight:600; padding:1px 8px; border-radius:999px; }
+  .status.ok { color:var(--ok); background:color-mix(in srgb,var(--ok) 12%,transparent); }
+  .status.failed,.status.interrupted { color:var(--bad); background:color-mix(in srgb,var(--bad) 12%,transparent); }
+  .status.running { color:var(--accent); background:color-mix(in srgb,var(--accent) 12%,transparent); }
+  table.files { width:100%; border-collapse:collapse; margin-top:8px; }
+  table.files td { padding:6px 8px 6px 0; border-top:1px solid var(--line); vertical-align:top; }
+  .path { font:12px ui-monospace,Consolas,monospace; color:var(--muted); cursor:copy; word-break:break-all; }
+  .fname { font-weight:600; word-break:break-all; }
+  .err { color:var(--bad); font-size:12.5px; margin-top:6px; }
+  .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--text); color:var(--bg); padding:8px 14px; border-radius:8px; font-size:13px; opacity:0; transition:opacity .2s; pointer-events:none; }
+  .toast.show { opacity:1; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Job Scraper</h1>
+    <span class="chip" id="apify"><span class="dot"></span>Apify: …</span>
+    <span class="chip" id="google"><span class="dot"></span>Google Sheets: …</span>
+  </header>
+
+  <div class="grid" id="commands"></div>
+  <p class="muted">Each button works once per day and unlocks again after midnight. A run that fails doesn't use up the day, so you can try again.</p>
+
+  <div id="running"></div>
+
+  <h2>Run history</h2>
+  <div id="history"></div>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+let S = null, timer = null, openLogs = new Set(), logCache = {};
+
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2200); }
+
+async function post(path, body) {
+  const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Job-Scraper': '1' }, body: JSON.stringify(body ?? {}) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+const fmtTime = (iso) => iso ? new Date(iso).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+const fmtDur = (s) => s == null ? '' : s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+const since = (iso) => fmtDur(Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+
+function renderHeader() {
+  const a = $('apify');
+  a.innerHTML = `<span class="dot ${S.apify.ok ? 'ok' : 'bad'}"></span>Apify: ${esc(S.apify.text)}`;
+  const g = S.google, el = $('google');
+  if (!g.configured) el.innerHTML = `<span class="dot bad"></span>Google Sheets: not set up — see SETUP.md`;
+  else if (!g.connected) el.innerHTML = `<span class="dot bad"></span>Google Sheets: <a href="/google/connect">Connect Google</a>`;
+  else el.innerHTML = `<span class="dot ok"></span>${esc(g.email || 'Google')} · <a href="/sheets/tracker" target="_blank" rel="noopener">Open Job Tracker</a> · <a href="#" id="disc">Disconnect</a>`;
+  const d = $('disc'); if (d) d.onclick = async (e) => { e.preventDefault(); if (confirm('Disconnect Google? Your spreadsheets stay in Drive.')) { await post('/api/google/disconnect'); load(); } };
+}
+
+function renderCommands() {
+  $('commands').innerHTML = S.commands.map((c) => {
+    const busy = S.running && S.running.command === c.id;
+    const disabled = c.usedToday || Boolean(S.running);
+    const state = busy ? `Running… ${since(S.running.startedAt)}` : c.usedToday ? `✓ Used today at ${new Date(c.usedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} · unlocks tomorrow` : S.running ? 'Waiting for the current run' : 'Ready';
+    return `<button class="cmd" data-id="${c.id}" ${disabled ? 'disabled' : ''}>
+      <span class="row"><b>${esc(c.label)}</b><span class="tag ${c.cost}">${c.cost === 'paid' ? 'uses Apify credit' : 'free'}</span></span>
+      <span class="muted">${esc(c.description)}</span>
+      <span class="muted">${esc(state)}</span></button>`;
+  }).join('');
+  for (const b of document.querySelectorAll('button.cmd')) b.onclick = () => run(b.dataset.id);
+}
+
+async function run(id) {
+  const c = S.commands.find((x) => x.id === id);
+  const msg = c.cost === 'paid'
+    ? `"${c.label}" spends Apify credit (usually $0.30–0.40, at most about $0.58). Apify: ${S.apify.text}.\n\nThis button can be used once today. Start now?`
+    : `Run "${c.label}"? This button can be used once today.`;
+  if (!confirm(msg)) return;
+  try { await post('/api/run', { command: id }); load(); } catch (e) { alert(e.message); }
+}
+
+function renderRunning() {
+  const r = S.running;
+  if (!r) { $('running').innerHTML = ''; return; }
+  const pre = document.querySelector('#running pre');
+  const atBottom = !pre || pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
+  $('running').innerHTML = `<h2>Running now</h2><div class="panel"><div class="row"><span class="status running">running</span><b>${esc(r.label)}</b><span class="muted">started ${since(r.startedAt)} ago</span></div><pre class="log">${esc(r.log.join('\n')) || 'starting…'}</pre></div>`;
+  const p2 = document.querySelector('#running pre');
+  if (atBottom) p2.scrollTop = p2.scrollHeight;
+}
+
+function fileRow(f) {
+  const sheet = f.openUrl
+    ? `<a class="small" href="${esc(f.sheetUrl || f.openUrl)}" target="_blank" rel="noopener" title="${f.sheetUrl ? 'Opens the saved spreadsheet' : 'Saves it to Google Sheets, then opens it'}">Open in Google Sheets</a>`
+    : '';
+  return `<tr><td><div class="fname">${esc(f.name)}${f.rows != null ? ` <span class="muted">(${f.rows} jobs)</span>` : ''}</div>
+    <div class="path" data-copy="${esc(f.path)}" title="Click to copy">${esc(f.path)}</div></td>
+    <td style="white-space:nowrap;text-align:right"><span class="row" style="justify-content:flex-end">${sheet}
+    <button class="small" data-open="${esc(f.path)}">Open file</button><button class="small" data-reveal="${esc(f.path)}">Show in folder</button></span></td></tr>`;
+}
+
+function summary(e) {
+  const r = e.run;
+  if (!r) return '';
+  const bits = [`${r.totals?.unique ?? 0} jobs`, `<b>${r.totals?.new ?? 0} new</b>`, typeof r.costUsd === 'number' ? `$${r.costUsd.toFixed(3)}` : '', fmtDur(r.durationSec), r.errors ? `<span style="color:var(--bad)">${r.errors} source error(s)</span>` : ''];
+  return bits.filter(Boolean).join(' · ');
+}
+
+function renderHistory() {
+  if (!S.history.length) { $('history').innerHTML = '<p class="muted">No runs yet. Click a button above.</p>'; return; }
+  $('history').innerHTML = S.history.map((e, i) => {
+    const latest = i === 0 && e.status !== 'running';
+    const sheets = e.uploading ? `<div class="muted">Saving to Google Sheets…</div>`
+      : e.trackerAdded != null ? `<div class="muted">Saved to Google Sheets · ${e.trackerAdded} job(s) added to the Job Tracker</div>` : '';
+    return `<div class="entry ${latest ? 'latest' : ''}">
+      <div class="row"><span class="status ${e.status}">${e.status === 'ok' ? 'done' : e.status}</span><b>${esc(e.label)}</b>
+      <span class="muted">${esc(fmtTime(e.startedAt))}${e.finishedAt && !e.run ? ` · ${fmtDur(Math.round((new Date(e.finishedAt) - new Date(e.startedAt)) / 1000))}` : ''}</span></div>
+      ${e.run ? `<div class="muted" style="margin-top:4px">${esc(e.run.sheetTitle)}</div><div style="margin-top:2px">${summary(e)}</div>` : ''}
+      ${sheets}${e.sheetsError ? `<div class="err">Google Sheets: ${esc(e.sheetsError)}</div>` : ''}
+      ${e.files.length ? `<table class="files">${e.files.map(fileRow).join('')}</table>` : ''}
+      ${e.hasLog ? `<details data-log="${esc(e.id)}" ${openLogs.has(e.id) ? 'open' : ''}><summary class="muted" style="cursor:pointer;margin-top:6px">Output</summary><pre class="log">${esc((logCache[e.id] || ['loading…']).join('\n'))}</pre></details>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function wire() {
+  for (const el of document.querySelectorAll('[data-copy]')) el.onclick = () => navigator.clipboard.writeText(el.dataset.copy).then(() => toast('Path copied'));
+  for (const el of document.querySelectorAll('[data-open]')) el.onclick = () => post('/api/open', { path: el.dataset.open }).catch((e) => alert(e.message));
+  for (const el of document.querySelectorAll('[data-reveal]')) el.onclick = () => post('/api/open', { path: el.dataset.reveal, reveal: true }).catch((e) => alert(e.message));
+  for (const d of document.querySelectorAll('details[data-log]')) d.ontoggle = async () => {
+    const id = d.dataset.log;
+    if (!d.open) { openLogs.delete(id); return; }
+    openLogs.add(id);
+    if (!logCache[id]) { logCache[id] = (await (await fetch(`/api/log?id=${encodeURIComponent(id)}`)).json()).log; renderHistory(); wire(); }
+  };
+}
+
+async function load() {
+  clearTimeout(timer);
+  try {
+    S = await (await fetch('/api/state')).json();
+    renderHeader(); renderCommands(); renderRunning(); renderHistory(); wire();
+  } catch { $('history').innerHTML = '<p class="err">Lost connection to the Job Scraper server. Is the terminal window still open? Run <code>npm start</code> again.</p>'; }
+  const busy = S && (S.running || S.history.some((e) => e.uploading));
+  timer = setTimeout(load, busy ? 1500 : 10000);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
+load();
+</script>
+</body>
+</html>

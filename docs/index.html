@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Job Scraper</title>
+<meta name="description" content="A personal tool that finds remote Full Stack jobs and saves them to your own Google Sheets.">
+<link rel="icon" href="logo.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <header><img src="logo.png" alt="Job Scraper logo"><h1>Job Scraper</h1></header>
+
+  <p>Job Scraper is a personal, open-source tool that finds remote Full Stack developer jobs on public job boards, scores each one for fit, and saves the results as CSV files and, if you choose, as spreadsheets in <b>your own</b> Google Drive.</p>
+
+  <h2>How it works</h2>
+  <ul>
+    <li>It runs only on your own computer. You start it with <code>npm start</code> and use it in your browser at <code>http://127.0.0.1</code>.</li>
+    <li>It collects public job listings from LinkedIn, Indeed, Glassdoor and Wellfound (through Apify) and from RemoteOK, Jobicy, We Work Remotely, Working Nomads and Arbeitnow.</li>
+    <li>When you connect Google, it creates a <b>Job Scraper</b> folder in your Drive with one spreadsheet per run and a <b>Job Tracker</b> spreadsheet, where you track each application with a status dropdown.</li>
+  </ul>
+
+  <h2>Google access</h2>
+  <p>The app asks for one Google Drive permission, <code>drive.file</code>: <i>“See, edit, create, and delete only the specific Google Drive files you use with this app.”</i> It cannot see or change any other file in your Drive. It also reads your email address to show which account is connected. You can remove access at any time at <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.</p>
+
+  <p>Source code: <a href="https://github.com/muzairsaleem7/apify-job-scraper">github.com/muzairsaleem7/apify-job-scraper</a></p>
+
+  <nav><a href="./">Home</a><a href="privacy.html">Privacy policy</a><a href="terms.html">Terms of service</a></nav>
+</main>
+</body>
+</html>

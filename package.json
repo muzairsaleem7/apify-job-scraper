@@ -1,0 +1,26 @@
+{
+  "name": "job-scraper",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Remote Full Stack job scraper (LinkedIn, Indeed, Glassdoor, Wellfound via Apify + 5 free boards) with a local web UI and Google Sheets export",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/server.ts",
+    "scrape": "node --env-file-if-exists=.env src/cli.ts scrape",
+    "scrape:24h": "node --env-file-if-exists=.env src/cli.ts scrape --window 24h",
+    "scrape:7d": "node --env-file-if-exists=.env src/cli.ts scrape --window 7d",
+    "plan": "node --env-file-if-exists=.env src/cli.ts scrape --dry-run",
+    "tokens": "node --env-file-if-exists=.env src/cli.ts tokens",
+    "rescore": "node src/cli.ts rescore",
+    "typecheck": "tsc",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "check": "tsc && node --test \"test/**/*.test.ts\""
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.0"
+  }
+}
