@@ -2,6 +2,8 @@
 
 Finds remote Full Stack jobs on demand from 9 sources, scores each one for fit, and writes CSV files with the best matches on top. Nothing is deployed: you run it when you need it.
 
+**New here? Read [GUIDE.md](GUIDE.md)** for every feature in plain terms and a step-by-step setup anyone can follow.
+
 | Source | How | Cost (Apify free plan) |
 |---|---|---|
 | LinkedIn Jobs | Apify Actor `valig/linkedin-jobs-scraper` | $0.0004 / job |
